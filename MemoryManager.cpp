@@ -71,7 +71,7 @@ void lockMutex(pthread_mutex_t *mutex){
 }
 
 /**
- * unlock the mutex
+ * unlock the mutexd
  * @param mutex a mutex
  */
 void unlockMutex(pthread_mutex_t *mutex){
