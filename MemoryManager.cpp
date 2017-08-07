@@ -47,6 +47,51 @@ uint64_t lastGapStartAddress;
 /** A mutex for the lastGapStartAddress*/
 pthread_mutex_t *lastGapStartAddressMutex;
 
+
+/**
+ * create a non specific mutex
+ * @param mutex a mutex
+ */
+void createMutex(pthread_mutex_t *mutex){
+	if(pthread_mutex_init(mutex,NULL)!=0){
+		printf("failure: pthread_mutex_init failed\n");
+		exit(1);
+	}
+}
+
+/**
+ * lock the mutex
+ * @param mutex a mutex
+ */
+void lockMutex(pthread_mutex_t *mutex){
+	if(pthread_mutex_lock(mutex)!=0){
+		printf("failure: pthread_mutex_lock failed\n");
+		exit(1);
+	}
+}
+
+/**
+ * unlock the mutex
+ * @param mutex a mutex
+ */
+void unlockMutex(pthread_mutex_t *mutex){
+	if(pthread_mutex_unlock(mutex)!=0){
+		printf("failure: pthread_mutex_unlock failed\n");
+		exit(1);
+	}
+}
+
+/**
+ * destroy a mutex
+ * @param mutex a  mutex
+ */
+void destroyMutex(pthread_mutex_t *mutex){
+	if(pthread_mutex_destroy(mutex)!=0){
+		printf("failure: pthread_mutex_destroy failed\n");
+		exit(1);
+	}
+}
+
 /**
  * initiate the library
  */
@@ -54,9 +99,9 @@ void manager_init(){
 
 	lastGapEndAddress = (MAX_INT32 *(uint64_t)(pow(2,4)));
 	//initiate the mutexes
-	pthread_mutex_init(allocatedMemoryMapMutex, NULL);
-	pthread_mutex_init(lastGapStartAddressMutex, NULL);
-	pthread_mutex_init(freeMemoryVectorMutex, NULL);
+	createMutex(allocatedMemoryMapMutex);
+	createMutex(lastGapStartAddressMutex);
+	createMutex(freeMemoryVectorMutex);
 }
 
 /**
@@ -64,9 +109,9 @@ void manager_init(){
  */
 void manager_fini(){
 	//destroy mutexes
-	pthread_mutex_destroy(allocatedMemoryMapMutex);
-	pthread_mutex_destroy(lastGapStartAddressMutex);
-	pthread_mutex_destroy(freeMemoryVectorMutex);
+	destroyMutex(allocatedMemoryMapMutex);
+	destroyMutex(lastGapStartAddressMutex);
+	destroyMutex(freeMemoryVectorMutex);
 
 	lastGapEndAddress = lastGapStartAddress = 0;
 
@@ -80,10 +125,10 @@ void manager_fini(){
  */
 void allocatedPagesInsertion(struct Bounds *allocatedPages){
 	//insert to the allocatedMemoryMap
-	pthread_mutex_lock(allocatedMemoryMapMutex);
+	lockMutex(allocatedMemoryMapMutex);
 	allocatedMemoryMap[allocCounter] = (*allocatedPages);
 	allocCounter ++;
-	pthread_mutex_unlock(allocatedMemoryMapMutex);
+	unlockMutex(allocatedMemoryMapMutex);
 };
 
 /**
@@ -94,7 +139,7 @@ void allocatedPagesInsertion(struct Bounds *allocatedPages){
  */
 uint64_t firstFit(size_t size, bool *found){
 	uint64_t startAddress = 0;
-	pthread_mutex_lock(freeMemoryVectorMutex);
+	lockMutex(freeMemoryVectorMutex);
 
 	freeVector::iterator iter = freeMemoryVector.begin();
 	//search for the a memory allocation that fit the size
@@ -110,13 +155,13 @@ uint64_t firstFit(size_t size, bool *found){
 				(*iter).size -= size;
 				(*iter).start += size;
 			}
-			pthread_mutex_unlock(freeMemoryVectorMutex);
+			unlockMutex(freeMemoryVectorMutex);
 			//noted that a suitable allocation has been found
 			(*found)=true;
 			return startAddress;
 		}
 	}
-	pthread_mutex_lock(freeMemoryVectorMutex);
+	unlockMutex(freeMemoryVectorMutex);
 	return startAddress;
 }
 /**
@@ -139,7 +184,7 @@ uint64_t manager_malloc(size_t size){
 		allocatedPagesInsertion(&allocatedPages);
 
 	}else{
-		pthread_mutex_lock(lastGapStartAddressMutex);
+		lockMutex(lastGapStartAddressMutex);
 		if((lastGapEndAddress - lastGapStartAddress) >= size) {
 //			uint64_t remainingSize = BYTES_2MB - (size % BYTES_2MB);
 //			if(remainingSize != 0){
@@ -148,11 +193,11 @@ uint64_t manager_malloc(size_t size){
 			//creating a new bounds that contains all of the information on the allocation at hand
 			Bounds allocatedPages = {lastGapStartAddress,size};
 			lastGapStartAddress += size;
-			pthread_mutex_unlock(lastGapStartAddressMutex);
+			unlockMutex(lastGapStartAddressMutex);
 
 			allocatedPagesInsertion(&allocatedPages);
 		}else{
-			pthread_mutex_unlock(lastGapStartAddressMutex);
+			unlockMutex(lastGapStartAddressMutex);
 			return 0;
 		}
 	}
@@ -162,11 +207,12 @@ uint64_t manager_malloc(size_t size){
 /**
  * insert to an old node if the bounds match
  * @param freePages the pages that are being inserted into the vector
+ * @return return true if it was inserted else return false
  */
 bool insertionToAnOldNode( Bounds *freePages){
 	uint64_t endBound = freePages->start + freePages->size;
 
-	pthread_mutex_lock(freeMemoryVectorMutex);
+	lockMutex(freeMemoryVectorMutex);
 	freeVector::iterator iter = freeMemoryVector.begin();
 
 	//search the vector for a match between the bounds
@@ -181,7 +227,7 @@ bool insertionToAnOldNode( Bounds *freePages){
 			return true;
 		}
 	}
-	pthread_mutex_unlock(freeMemoryVectorMutex);
+	unlockMutex(freeMemoryVectorMutex);
 	return false;
 }
 
@@ -195,17 +241,18 @@ void freePagesInsertion(Bounds *freePages){
 	//try to insert to an old node
 	if (!insertionToAnOldNode( freePages)) {
 
-		pthread_mutex_lock(lastGapStartAddressMutex);
+		lockMutex(lastGapStartAddressMutex);
 
 		if (endBound == lastGapStartAddress) {
 			lastGapStartAddress -= freePages->size;
-			pthread_mutex_unlock(lastGapStartAddressMutex);
+			unlockMutex(lastGapStartAddressMutex);
 		} else {
-			pthread_mutex_unlock(lastGapStartAddressMutex);
+			unlockMutex(lastGapStartAddressMutex);
 			//add it as a new node of the vector
+			lockMutex(freeMemoryVectorMutex);
 			pthread_mutex_lock(freeMemoryVectorMutex);
 			freeMemoryVector.push_back(*freePages);
-			pthread_mutex_unlock(freeMemoryVectorMutex);
+			unlockMutex(freeMemoryVectorMutex);
 		}
 	}
 
@@ -217,17 +264,17 @@ void freePagesInsertion(Bounds *freePages){
  */
 void manager_free(uint64_t alloc_id){
 	//search for allocated memory
-	pthread_mutex_lock(allocatedMemoryMapMutex);
+	lockMutex(allocatedMemoryMapMutex);
 	allocMap::iterator search = allocatedMemoryMap.find(alloc_id);
 	if(search != allocatedMemoryMap.end()){
 
 		Bounds freePages = search->second;
 		allocatedMemoryMap.erase(search);
-		pthread_mutex_unlock(allocatedMemoryMapMutex);
+		unlockMutex(allocatedMemoryMapMutex);
 		//add the page the free memory vector
 		freePagesInsertion(&freePages);
 
 	}else{
-		pthread_mutex_unlock(allocatedMemoryMapMutex);
+		unlockMutex(allocatedMemoryMapMutex);
 	}
 }
