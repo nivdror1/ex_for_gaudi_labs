@@ -3,5 +3,5 @@ project(gaudiLabs)
 
 set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -std=c11++")
 
-set(SOURCE_FILES MemoryManager.cpp)
+set(SOURCE_FILES MemoryManager.cpp main.cpp)
 add_executable(gaudiLabs ${SOURCE_FILES})
